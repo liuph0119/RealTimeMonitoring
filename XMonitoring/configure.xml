@@ -1,0 +1,7 @@
+<DatabaseInfo>
+	<HostName>localhost</HostName>
+	<UserName>gis</UserName>
+	<Password>gis</Password>
+	<Port>3306</Port>
+	<DatabaseName>985_record_db</DatabaseName>
+</DatabaseInfo>

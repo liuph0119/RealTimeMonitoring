@@ -1,7 +1,8 @@
 ﻿#pragma once
 #include <QDialog>
 #include "ui_infoclientdlg.h"
-#include <QUdpSocket>
+#include <QtNetWork/QUdpSocket>
+#include <QtCore/QtCore>
 
 class InfoClientDlg : public QDialog {
 	Q_OBJECT
@@ -14,6 +15,6 @@ public slots:
 	void receiveInfo();
 
 private:
-	Ui::InfoClientDlg ui;
+	Ui::InfoClientDlgClass ui;
 	QUdpSocket* mpUdpSocket;
 };

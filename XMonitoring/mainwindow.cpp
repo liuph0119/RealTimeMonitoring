@@ -1,13 +1,170 @@
-#include "mainwindow.h"
+ï»¿#include "mainwindow.h"
 #include <QMessageBox>
 #include "my_algorithms.h"
+#include "loaddnnnetthread.h"
+#include "facerecodnitionthread.h"
 
 mainwindow::mainwindow(QWidget *parent)
 	: QMainWindow(parent)
 {
 	ui.setupUi(this);
 
-	// ³õÊ¼»¯ÉãÏñÍ·;
+	setFixedSize(661, 528);
+	//åˆå§‹åŒ–æœªå¯¼å…¥æ¨¡å‹;
+	mbNetLoaded = false;
+	mbDatabaseConnected = false;
+	mnProcSize = 256;
+	msCurrentDir = QCoreApplication::applicationDirPath() + "/data";
+
+
+	//è®¾ç½®ç•Œé¢ä¸å¯è§;
+	ui.label->setVisible(false);
+	ui.label_2->setVisible(false);
+	ui.warningprob->setVisible(false);
+	ui.cameraId->setVisible(false);
+	ui.btn_restart->setVisible(false);
+	ui.output->setVisible(false);
+
+	//ä»æ–‡ä»¶å¯¼å…¥æ¨¡å‹ï¼Œå¹¶ä¸”è®¡ç®—å›¾ç‰‡çš„ç‰¹å¾ï¼Œå­˜å…¥æ•°æ®åº“;
+	connect(ui.actioninitialfromimages, &QAction::triggered, this, &mainwindow::init_env_mode1);
+	//ä»æ–‡ä»¶å¯¼å…¥æ¨¡å‹ï¼Œä»æ•°æ®åº“ä¸­è·å–ç‰¹å¾ä¿¡æ¯;
+	connect(ui.actioninitial_from_db, &QAction::triggered, this, &mainwindow::init_env_mode2);
+	//é‡é€‰æ‘„åƒå¤´;
+	connect(ui.btn_restart, &QPushButton::clicked, this, &mainwindow::openCamera);
+	//æ¨¡æ‹Ÿæµ‹è¯•è­¦æŠ¥;
+	connect(ui.actionsimulation_danger, &QAction::triggered, this, &mainwindow::simulate_danger);
+	connect(ui.actionsimulation_safe, &QAction::triggered, this, &mainwindow::simulate_safe);
+	//å…³äº;
+	connect(ui.actionCopyRight, &QAction::triggered, this, &mainwindow::whatisit);
+	//é€€å‡º;
+	connect(ui.actionExit, &QAction::triggered, this, &mainwindow::close);
+}
+
+mainwindow::~mainwindow()
+{
+	mcVideo.release();
+	mbIsCameraRuning = false;
+	closeCamera();
+	mDatabase.close();
+}
+
+
+
+void mainwindow::addOutput(QString msg)
+{
+	ui.output->append(QDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss") + " >> " + msg);
+}
+
+void mainwindow::openCamera()
+{
+	//è·å–æ‘„åƒå¤´ä¸ªæ•°;
+	mbIsCameraRuning = false;
+	int nCurIdx = ui.cameraId->currentIndex();
+	mcVideo.release();
+
+	if (!mcVideo.open(nCurIdx))
+	{
+		addOutput("no avail camera. error.");
+		mbIsCameraRuning = false;
+	}
+	else
+	{
+		addOutput(QString("camera %1 running...").arg(nCurIdx + 1));
+		mbIsCameraRuning = true;
+		mImgSrc = cv::Mat::zeros(mcVideo.get(CV_CAP_PROP_FRAME_HEIGHT), mcVideo.get(CV_CAP_PROP_FRAME_WIDTH), CV_8UC3);
+		mImgProc = cv::Mat::zeros(mnProcSize, mnProcSize, CV_8UC3);
+
+		//å¯åŠ¨;
+		mTimerCamera = new QTimer();
+		mTimerCamera->start(100);
+		connect(mTimerCamera, &QTimer::timeout, this, &mainwindow::updateCamera);
+
+		mTimerDetection = new QTimer();
+		mTimerDetection->start(1);
+		connect(mTimerDetection, &QTimer::timeout, this, &mainwindow::realTimeDetection);
+	}
+}
+
+void mainwindow::closeCamera()
+{
+	if (mbIsCameraRuning)
+	{
+		mTimerCamera->stop();
+		delete mTimerCamera;
+		mcVideo.release();
+		mbIsCameraRuning = false;
+		addOutput("close camera.");
+	}
+}
+
+void mainwindow::realTimeDetection()
+{
+	if (mImgProc.empty())
+		return;
+	mTimerDetection->stop();
+	//å¦è¾Ÿçº¿ç¨‹ï¼Œå®æ—¶ç›‘æµ‹;
+	QEventLoop loop;
+	FaceRecodnitionThread _facerecognitionthread(this);
+	_facerecognitionthread.setParams(mImgProc, mcPoseModel, mcNet, mvface_desc);
+	_facerecognitionthread.start();
+
+	connect(&_facerecognitionthread, &FaceRecodnitionThread::finished, &loop, &QEventLoop::quit);
+	connect(&_facerecognitionthread, &FaceRecodnitionThread::sig_message, this, &mainwindow::parseProb);
+	loop.exec();
+	_facerecognitionthread.wait();//é˜²æ­¢çº¿ç¨‹æ„å¤–ä¸­æ­¢;
+
+	mTimerDetection->start(1);
+}
+
+void mainwindow::simulate_danger()
+{
+	if (!mbDatabaseConnected)
+	{
+		if (!connect_database(mDatabase))
+		{
+			addOutput("connect database fail!");
+			return;
+		}
+	}
+	QSqlQuery _query;
+	QString _time = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+	QString _sql = QString("update real_time_state_tbl set tm='%1',state='danger',danger_index=%2").arg(_time).arg(100);
+	_query.exec(_sql);
+}
+
+void mainwindow::simulate_safe()
+{
+	if (!mbDatabaseConnected)
+	{
+		if (!connect_database(mDatabase))
+		{
+			addOutput("connect database fail!");
+			return;
+		}
+	}
+	QSqlQuery _query;
+	QString _time = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+	QString _sql = QString("update real_time_state_tbl set tm='%1',state='safe',danger_index=%2").arg(_time).arg(0);
+	_query.exec(_sql);
+}
+
+void mainwindow::whatisit()
+{
+	QMessageBox::information(this, "Information", "Touch Fish Server 1.0\nCopyright (c) 2017 Touch Fish Group\n\nThis software is based on Qt, Opencv and Dlib.");
+}
+
+void mainwindow::paintEvent(QPaintEvent *e)
+{
+	ui.cameralbl->setPixmap(QPixmap::fromImage(mImgShow));
+	ui.cameralbl->show();
+
+	ui.cameralbl_small->setPixmap(QPixmap::fromImage(mImgShow_small));
+	ui.cameralbl_small->show();
+}
+
+void mainwindow::getCameras()
+{
+	// è·å–æœ‰æ•ˆæ‘„åƒå¤´æ•°ç›®;
 	int camera_count = -1;
 	int i = 0;
 	while (1)
@@ -26,61 +183,139 @@ mainwindow::mainwindow(QWidget *parent)
 	}
 
 	for (i = 0; i < camera_count; i++)
-		ui.cameraId->addItem(QString("camera - %1").arg(i + 1));
+		ui.cameraId->addItem(QString("camera-%1").arg(i + 1));
 	ui.cameraId->setCurrentIndex(0);
+}
 
-	load_init();
-
-	mbIsCameraRuning = false;
-	mnProcSize = 256;
-	if (!mcVideo.open(0))
+void mainwindow::updateCamera()
+{
+	if (mbIsCameraRuning == false)
 	{
-		addOutput("no avail camera. error.");
-		mbIsCameraRuning = false;
+		addOutput("can not find camera.");
+		mTimerCamera->stop();
+		delete mTimerCamera;
+	}
+
+	mcVideo >> mImgSrc;
+
+	//æ˜¾ç¤ºå¤§å°å›¾åƒ;
+	if (mImgSrc.data)
+	{
+		cv::cvtColor(mImgSrc, mImgSrc, CV_BGR2RGB);//Qtä¸­æ”¯æŒçš„æ˜¯RGBå›¾åƒ, OpenCVä¸­æ”¯æŒçš„æ˜¯BGR  
+		mImgShow = QImage((uchar*)(mImgSrc.data), mImgSrc.cols, mImgSrc.rows, QImage::Format_RGB888).scaled(ui.cameralbl->size());
+		cv::resize(mImgSrc, mImgProc, cv::Size(mnProcSize, mnProcSize));
+		//mImgShow_small = QImage((uchar*)(mImgProc.data), mImgProc.cols, mImgProc.rows, QImage::Format_RGB888).scaled(ui.cameralbl_small->size());
+		this->update();
+	}
+}
+
+void mainwindow::init_env_mode1()
+{
+	ui.label->setVisible(true);
+	ui.label_2->setVisible(true);
+	ui.warningprob->setVisible(true);
+	ui.cameraId->setVisible(true);
+	ui.btn_restart->setVisible(true);
+	ui.output->setVisible(true);
+
+	//è¿æ¥æ•°æ®åº“;
+	if (connect_database(mDatabase))
+	{
+		addOutput("connect database success!");
+		mbDatabaseConnected = true;
 	}
 	else
 	{
-		addOutput("camera 1(default) running...");
-		mbIsCameraRuning = true;
-		//ÉêÇëÄÚ´æ;
-		mImgSrc = cv::Mat::zeros(mcVideo.get(CV_CAP_PROP_FRAME_HEIGHT), mcVideo.get(CV_CAP_PROP_FRAME_WIDTH), CV_8UC3);
-		mImgProc = cv::Mat::zeros(mnProcSize, mnProcSize, CV_8UC3);
-
-		//Æô¶¯ÉãÏñÍ·;
-		mTimerCamera.start(100);	//100 ms¼ä¸ô;
-		connect(&mTimerCamera, SIGNAL(timeout()), this, SLOT(updateCamera()));
+		addOutput("connect database success!");
 	}
 
+	//åŠ è½½æ¨¡å‹;
+	std::string posefn = "shape_predictor_68_face_landmarks.dat";
+	std::string netfn = "dlib_face_recognition_resnet_model_v1.dat";
+	deserialize(posefn.c_str()) >> mcPoseModel;
+	deserialize(netfn.c_str()) >> mcNet;
 
-	connect(ui.lunchCamera, SIGNAL(clicked()), this, SLOT(startCamera()));
-	connect(ui.loadModel, SIGNAL(clicked()), this, SLOT(load_init()));
+	QString _name = "xjp";
+	//è¯»å–æ ·æœ¬ä¿¡æ¯, å­˜å…¥æ•°æ®åº“;
+	if (!mbNetLoaded)
+		load_samples_from_images(_name);
+	
+	//è·å–æ‘„åƒå¤´æ•°ç›®ä¿¡æ¯;
+	getCameras();
+	//æ‰“å¼€æ‘„åƒå¤´;
+	openCamera();
 }
 
-mainwindow::~mainwindow()
+
+void mainwindow::init_env_mode2()
 {
-	mcVideo.release();
-	mbIsCameraRuning = false;
-	closeCamera();
+	ui.label->setVisible(true);
+	ui.label_2->setVisible(true);
+	ui.warningprob->setVisible(true);
+	ui.cameraId->setVisible(true);
+	ui.btn_restart->setVisible(true);
+	ui.output->setVisible(true);
+
+	//è¿æ¥æ•°æ®åº“;
+	if (connect_database(mDatabase))
+	{
+		addOutput("connect database success!");
+		mbDatabaseConnected = true;
+	}
+	else
+		addOutput("connect database fail!");
+	
+
+	//åŠ è½½æ¨¡å‹;
+	std::string posefn = "shape_predictor_68_face_landmarks.dat";
+	std::string netfn = "dlib_face_recognition_resnet_model_v1.dat";
+	deserialize(posefn.c_str()) >> mcPoseModel;
+	deserialize(netfn.c_str()) >> mcNet;
+
+
+	QDomDocument doc;
+	QFile xmlfile("configure.xml"); //filepathä¸ºxmlæ–‡ä»¶è·¯å¾„  
+	if (!xmlfile.open(QIODevice::ReadOnly))
+		return;
+
+	if (!doc.setContent(&xmlfile))
+	{
+		xmlfile.close();
+		return;
+	}
+	QDomElement root = doc.documentElement();
+
+	QString _name = root.elementsByTagName("Name").at(0).toElement().text();
+	//è¯»å–æ ·æœ¬ä¿¡æ¯, å­˜å…¥æ•°æ®åº“;
+	load_samples_from_db(mDatabase, _name);
+
+	//è·å–æ‘„åƒå¤´æ•°ç›®ä¿¡æ¯;
+	getCameras();
+	//æ‰“å¼€æ‘„åƒå¤´;
+	openCamera();
 }
 
-bool mainwindow::load_init()
+
+void mainwindow::parseProb(QString msg)
 {
-	//ÉèÖÃÎÄ¼şµ±Ç°´æ´¢Â·¾¶;
-	msCurrentDir = QCoreApplication::applicationDirPath()+"/data";
-	QDir _dir(msCurrentDir);
-	if (!_dir.exists(msCurrentDir))
-		_dir.mkdir(msCurrentDir);
-	addOutput(QString("file will be saved to ") + msCurrentDir);
+	//æ˜¾ç¤ºå°å›¾åƒ;
+	mImgShow_small = QImage((uchar*)(mImgProc.data), mImgProc.cols, mImgProc.rows, QImage::Format_RGB888).scaled(ui.cameralbl_small->size());
 
-	msDlibPoseModels = "shape_predictor_68_face_landmarks.dat";
-	msDlib_Face_Recognition_Resnet_Model_v1 = "dlib_face_recognition_resnet_model_v1.dat";
+	double val = msg.toDouble();
+	addOutput(QString("dangerous index = %1").arg(val * 100, 0, 'f', 2));
+	QString _state = "safe";
+	if (val > ui.warningprob->value())
+		_state = "danger";
 
-	//dlib¼ì²â×ÓºÍÉî¶ÈÉñ¾­ÍøÂçÊ¶±ğ×ÓÔØÈë;
-	mcFrontFaceDetector = get_frontal_face_detector();
-	deserialize(msDlibPoseModels.toStdString()) >> mcPoseModel;
-	deserialize(msDlib_Face_Recognition_Resnet_Model_v1.toStdString()) >> mcNet;
+	QSqlQuery _query;
+	QString _time = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+	QString _sql = QString("update real_time_state_tbl set tm='%1',state='%2',danger_index=%3").arg(_time).arg(_state).arg(int(val * 100));
+	_query.exec(_sql);
+}
 
-	//±éÀúÑù±¾ÎÄ¼ş;
+bool mainwindow::load_samples_from_images(QString _name)
+{
+	//éå†æ ·æœ¬æ–‡ä»¶;
 	QString sImgDir = msCurrentDir + "/images";
 	QDir _qdir(sImgDir);
 	QFileInfoList finfo = _qdir.entryInfoList(QStringList(QString("*.jpg")), QDir::Files, QDir::Time);
@@ -90,157 +325,82 @@ bool mainwindow::load_init()
 		return false;
 	}
 
-	//´¦ÀíÃ¿Ò»ÕÅÑù±¾Í¼Æ¬;
-	foreach(QFileInfo _f, finfo)
+	addOutput(QString("load sample images, number = %1").arg(finfo.size()));
+	// å¤–éƒ¨çº¿ç¨‹æå–æ¯å¼ å›¾ç‰‡çš„ç‰¹å¾å’Œæ ‡ç­¾;
+	QEventLoop loop;
+	LoadDnnNetThread _loadnetthread(this);
+	
+	_loadnetthread.setParam(finfo, mcPoseModel, mcNet, mvface_desc);
+	_loadnetthread.start();
+	connect(&_loadnetthread, &LoadDnnNetThread::finished, &loop, &QEventLoop::quit);
+	connect(&_loadnetthread, &LoadDnnNetThread::sig_message, this, &mainwindow::addOutput);
+	loop.exec();
+	_loadnetthread.wait();//é˜²æ­¢çº¿ç¨‹æ„å¤–ä¸­æ­¢;
+
+	mbNetLoaded = true;
+	addOutput("load samples...success!");
+	addOutput("save to database...");
+
+	/*è®¡ç®—å®Œæ¯•ï¼Œå­˜å…¥æ•°æ®åº“*/
+	//å°è¯•å°†æ ·æœ¬ä¿¡æ¯æ’å…¥æ•°æ®åº“;
+	mvface_desc = _loadnetthread.mvFaceInfo;
+	for (int i = 0; i < mvface_desc.size(); i++)
+		insert_faceinfo_into_db(mDatabase, mvface_desc[i]);
+	
+	return true;
+}
+
+
+bool mainwindow::load_samples_from_db(QSqlDatabase& db, QString _name)
+{
+	if (!mbDatabaseConnected)
+		if (!connect_database(db))
+		{
+			addOutput("connect database fail!");
+			return false;
+		};
+
+	//æŸ¥è¯¢ç‰¹å®šåç§°çš„å‘é‡;
+	QString _sql = QString("select photo_id,feature from face_feature_tbl");
+	QSqlQuery _query;
+	if (!_query.exec(_sql))
+		return false;
+
+	//è§£æåç§°å’Œç‰¹å¾å‘é‡;
+	mvface_desc.clear();
+	while (_query.next())
 	{
-		//´ò¿ªÍ¼Æ¬;
-		QString _sfileName = _f.absoluteFilePath();
-		addOutput(QString("load sample image - %1...").arg(_sfileName));
-
-		cv::Mat cv_img = cv::imread(_sfileName.toStdString().c_str());
-
-		/*¼ì²âÈËÁ³*/
-		std::vector<dlib::rectangle> vfaces;
-		std::vector<dlib::full_object_detection> vshapes;
-		int nfaces = GetFaceShapesFromImg(cv_img, mcPoseModel, vfaces, vshapes);
-		addOutput(QString("detected %1 faces in %2").arg(nfaces).arg(_sfileName));
-		if (nfaces != 1)
-			continue;
-
-		/*¼ÆËãÌØÕ÷*/
-		std::vector<double> _vfeatures = ComputeFeaturesFromFaceByDNN(cv_img, mcNet, vshapes[0]);
-		
-		/*¼ÓÈëÑù±¾¿âÖĞ*/
-		FACE_DESC sigle_face; 
-		sigle_face.name = _f.fileName().toStdString();
-		sigle_face.vfeatures = _vfeatures;
-		
-		mvface_desc.push_back(sigle_face);
-
-		cv_img.release();
+		FACE_DESC _info;
+		// åç§°;
+		_info.name = _query.value(0).toString().toStdString();
+		QString sfeatures = _query.value(1).toString();
+		QStringList slist = sfeatures.split(",");
+		// ç‰¹å¾å‘é‡;
+		for (int i = 0; i < slist.size(); i ++)
+			_info.vfeatures.push_back(slist[i].toDouble());
+		mvface_desc.push_back(_info);
 	}
 	return true;
 }
 
 bool mainwindow::detectFaceByDlib(cv::Mat &img)
 {
-	std::vector<dlib::rectangle> vfaces;
-	std::vector<dlib::full_object_detection> vshapes;
-
-	//Ê¶±ğÈËÁ³²¢ÇÒ»æÖÆ¾ØĞÎ;
-	int nfaces = GetFaceShapesFromImg(img, mcPoseModel, vfaces, vshapes, true);
-
 	
-	bool flag = false;
-	if (nfaces < 1)
+	return true;
+}
+
+bool mainwindow::insert_faceinfo_into_db(QSqlDatabase& db, FACE_DESC _info)
+{
+	QSqlQuery _query;
+	QString msg = QString("'%1','%2").arg(_info.name.c_str()).arg(_info.vfeatures[0], 0, 'f', 6);
+	for (int i = 1; i < _info.vfeatures.size(); i ++)
+		msg = msg + QString(",%1").arg(_info.vfeatures[i], 0, 'f', 6);
+	msg = msg + "'";
+	QString _sql = QString("insert into face_feature_tbl (photo_id,feature) values(%1)").arg(msg);
+	if (!_query.exec(_sql))
 		return false;
 	else
-	{
-		std::vector<std::vector<double>> _vvFeatures = GetAllFaceFeaturesByDNN(img, mcNet, vshapes);
-		for (int i = 0; i < nfaces; i ++)
-		{
-			for (int j = 0; j < mvface_desc.size(); j ++)
-			{
-				double _dis = ComputeFaceFeaturesDist(_vvFeatures[i], mvface_desc[j].vfeatures, true);
-				double _prob = distance2prob(_dis, true);
-				if (_prob > 0.5)
-				{
-					addOutput(QString("Dangerous!!! [%1] is coming soon!!! probability=[%2%]").arg(mvface_desc[j].name.substr(0, mvface_desc[j].name.length()-4).c_str()).arg(_prob*100, 0, 'f', 5));
-
-					//Èç¹ûÏàËÆ£¬½«ÕÕÆ¬´æÈëÑù±¾¿âÖĞ;
-					QDateTime _t = QDateTime::currentDateTime();
-					QString _fn = _t.toString("yyyyMMdd_hhmmss");
-					_fn = msCurrentDir + "/images/lxp_" + _fn + ".jpg";
-					cv::Mat new_img = img.clone();
-					cv::cvtColor(img, new_img, CV_BGR2RGB);
-					cv::imwrite(_fn.toStdString(), new_img);
-					new_img.release();
-					flag = true;
-				}
-			}
-		}
-	}
-	//ÏÔÊ¾Ğ¡Í¼Ïñ;
-	mImgShow_small = QImage((uchar*)(img.data), img.cols, img.rows, QImage::Format_RGB888).scaled(ui.cameralbl_small->size());
-	return flag;
+		addOutput("save to database...success!");
+	return true;
 }
 
-
-void mainwindow::addOutput(QString msg)
-{
-	ui.output->append(QDateTime::currentDateTime().toString("yyyyMMdd hh:mm:ss") + " >> " + msg);
-}
-
-void mainwindow::openCamera()
-{
-	//»ñÈ¡ÉãÏñÍ·¸öÊı;
-	mbIsCameraRuning = false;
-	int nCurIdx = ui.cameraId->currentIndex();
-	mcVideo.release();
-
-	if (!mcVideo.open(nCurIdx))
-	{
-		addOutput("no avail camera. error.");
-		mbIsCameraRuning = false;
-	}
-	else
-	{
-		addOutput(QString("camera %1 running...").arg(nCurIdx + 1));
-		mbIsCameraRuning = true;
-		mImgSrc = cv::Mat::zeros(mcVideo.get(CV_CAP_PROP_FRAME_HEIGHT), mcVideo.get(CV_CAP_PROP_FRAME_WIDTH), CV_8UC3);
-		mImgProc = cv::Mat::zeros(mnProcSize, mnProcSize, CV_8UC3);
-
-		//Æô¶¯;
-		mTimerCamera.start(100);
-		connect(&mTimerCamera, SIGNAL(timeout()), this, SLOT(updateCamera()));
-	}
-}
-
-void mainwindow::updateCamera()
-{
-	if (mbIsCameraRuning == false)
-	{
-		addOutput("can not find camera.");
-		mTimerCamera.stop();
-	}
-
-	mcVideo >> mImgSrc;
-
-	//ÏÔÊ¾´óĞ¡Í¼Ïñ;
-	if (mImgSrc.data)
-	{
-		cv::cvtColor(mImgSrc, mImgSrc, CV_BGR2RGB);//QtÖĞÖ§³ÖµÄÊÇRGBÍ¼Ïñ, OpenCVÖĞÖ§³ÖµÄÊÇBGR  
-		mImgShow = QImage((uchar*)(mImgSrc.data), mImgSrc.cols, mImgSrc.rows, QImage::Format_RGB888).scaled(ui.cameralbl->size());
-		cv::resize(mImgSrc, mImgProc, cv::Size(mnProcSize, mnProcSize));
-		mImgShow_small = QImage((uchar*)(mImgProc.data), mImgProc.cols, mImgProc.rows, QImage::Format_RGB888).scaled(ui.cameralbl_small->size());
-		this->update();
-	}
-
-	if (this->detectFaceByDlib(mImgProc))
-	{
-		mTimerCamera.stop();
-		//system("python");
-		//system("D:/A_Install/professional/vs2015/Common7/IDE/devenv /run D:/0_cppcode_vs2015/demo/demo.sln");
-	}
-}
-
-void mainwindow::closeCamera()
-{
-	if (mbIsCameraRuning)
-	{
-		mTimerCamera.stop();
-		mcVideo.release();
-		mbIsCameraRuning = false;
-		addOutput("close camera.");
-	}
-}
-
-
-void mainwindow::paintEvent(QPaintEvent *e)
-{
-	ui.cameralbl->setPixmap(QPixmap::fromImage(mImgShow));
-	ui.cameralbl->show();
-
-	ui.cameralbl_small->setPixmap(QPixmap::fromImage(mImgShow_small));
-	ui.cameralbl_small->show();
-}

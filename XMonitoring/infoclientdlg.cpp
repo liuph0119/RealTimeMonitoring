@@ -1,4 +1,5 @@
 ﻿#include "infoclientdlg.hpp"
+#include <QMessageBox>
 
 InfoClientDlg::InfoClientDlg(QDialog * parent) : QDialog(parent) {
 	ui.setupUi(this);

@@ -1,4 +1,8 @@
 #include "my_algorithms.h"
+#include <omp.h>
+
+
+
 double ComputeFaceFeaturesDist(std::vector<double> f1, std::vector<double> f2, bool bIsEulDist /*= false*/)
 {
 	if (f1.size() != f2.size())
@@ -38,27 +42,29 @@ int GetFaceShapesFromImg(cv::Mat &img, dlib::shape_predictor pose_model, std::ve
 
 	//faces;
 	dlib::cv_image<bgr_pixel> cimg(img);
+	faces.clear();
 	faces = detector(cimg);
+	if (faces.size() < 1)
+		return 0;
 
 	//feature points pairs;
 	face_shapes.clear();
+
+#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < faces.size(); ++i)
+	{
 		face_shapes.push_back(pose_model(cimg, faces[i]));
+	}
 
 	if (bIsShowImg)
 	{
-		int i, j;
-		for (j = 0; j < faces.size(); j++)		//number of faces
+#pragma omp parallel for schedule(dynamic)
+		for (int j = 0; j < faces.size(); j++)		//number of faces
 		{
 			//draw rects and numbers
 			cv::rectangle(img, cv::Rect(faces[j].left(), faces[j].top(), faces[j].width(), faces[j].height()), cv::Scalar(int(255.0 / (j + 1)), 0, 255), 3);
-			//cv::putText(img, QString::number(j).toStdString(), cvPoint(faces[j].left() + faces[j].width() / 2, faces[j].top() - 10), cv::FONT_HERSHEY_PLAIN, 5, cv::Scalar(int(255.0 / (j + 1)), 0, 255), 5);
-			//draw feature points
-			//for (int i = 0; i < 68; i++)		//68 feature points			
-				//cv::circle(img, cvPoint(face_shapes[j].part(i).x(), face_shapes[j].part(i).y()), 2, cv::Scalar(int(255.0 / (j + 1)), 0, 255), 5);
 		}
 	}
-
 	return faces.size();
 }
 
@@ -85,6 +91,8 @@ std::vector<std::vector<double>> GetAllFaceFeaturesByDNN(cv::Mat cv_img, anet_ty
 {
 	std::vector<std::vector<double>> all_features;
 	all_features.clear();
+
+#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < face_shapes.size(); i++)
 	{
 		std::vector<double> feas = ComputeFeaturesFromFaceByDNN(cv_img, dnn_net, face_shapes[i]);
@@ -108,3 +116,36 @@ double distance2prob(double _dis, bool bIsEulDist /*= false*/)
 	else
 		return 1.0 - _dis;
 }
+
+
+bool connect_database(QSqlDatabase& db)
+{
+	QDomDocument doc;
+	QFile xmlfile("configure.xml"); //filepath为xml文件路径  
+	if (!xmlfile.open(QIODevice::ReadOnly))
+		return false;
+
+	if (!doc.setContent(&xmlfile))
+	{
+		xmlfile.close();
+		return false;
+	}
+	QDomElement root = doc.documentElement();
+	QString _hostname = root.elementsByTagName("HostName").at(0).toElement().text();
+	QString _username = root.elementsByTagName("UserName").at(0).toElement().text();
+	QString _password = root.elementsByTagName("Password").at(0).toElement().text();
+	int _port = root.elementsByTagName("Port").at(0).toElement().text().toInt();
+	QString _dbName = root.elementsByTagName("DatabaseName").at(0).toElement().text();
+	xmlfile.close();
+
+	db = QSqlDatabase::addDatabase("QMYSQL");
+	db.setHostName(_hostname);			//数据库地址  
+	db.setUserName(_username);			//用户名称  
+	db.setPassword(_password);			//用户密码 
+	db.setPort(_port);
+	db.setDatabaseName(_dbName);		//数据库名称
+	if (!db.open())
+		return false;
+	return true;
+}
+

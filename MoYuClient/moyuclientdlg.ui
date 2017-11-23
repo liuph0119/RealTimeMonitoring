@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MoYuClientClass</class>
+ <widget class="QMainWindow" name="MoYuClientClass">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>330</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="windowTitle">
+   <string>MoYu</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>fish.ico</normaloff>fish.ico</iconset>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>30</y>
+      <width>240</width>
+      <height>240</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>TextLabel</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_state">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>276</y>
+      <width>301</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>Times New Roman</family>
+      <weight>50</weight>
+      <italic>true</italic>
+      <bold>false</bold>
+     </font>
+    </property>
+    <property name="text">
+     <string>state: safe</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="btn_police">
+    <property name="geometry">
+     <rect>
+      <x>292</x>
+      <y>0</y>
+      <width>31</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="icon">
+     <iconset>
+      <normaloff>police.ico</normaloff>police.ico</iconset>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>320</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuSomething">
+    <property name="title">
+     <string/>
+    </property>
+    <property name="icon">
+     <iconset>
+      <normaloff>fish.ico</normaloff>fish.ico</iconset>
+    </property>
+    <addaction name="actionStart"/>
+    <addaction name="actionAbout"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <addaction name="menuSomething"/>
+  </widget>
+  <action name="actionStart">
+   <property name="icon">
+    <iconset>
+     <normaloff>start.ico</normaloff>start.ico</iconset>
+   </property>
+   <property name="text">
+    <string>Start</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="icon">
+    <iconset>
+     <normaloff>exit.ico</normaloff>exit.ico</iconset>
+   </property>
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="icon">
+    <iconset>
+     <normaloff>help.ico</normaloff>help.ico</iconset>
+   </property>
+   <property name="text">
+    <string>About</string>
+   </property>
+  </action>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <resources>
+  <include location="moyuclientdlg.qrc"/>
+ </resources>
+ <connections/>
+</ui>
