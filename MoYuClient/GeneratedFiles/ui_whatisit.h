@@ -31,7 +31,7 @@ public:
             whatisit->setObjectName(QStringLiteral("whatisit"));
         whatisit->resize(400, 190);
         QIcon icon;
-        icon.addFile(QStringLiteral("help.ico"), QSize(), QIcon::Normal, QIcon::Off);
+        icon.addFile(QStringLiteral("icon/help.ico"), QSize(), QIcon::Normal, QIcon::Off);
         whatisit->setWindowIcon(icon);
         label = new QLabel(whatisit);
         label->setObjectName(QStringLiteral("label"));

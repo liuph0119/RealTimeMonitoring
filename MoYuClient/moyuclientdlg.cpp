@@ -18,7 +18,7 @@ MoYuClient::MoYuClient(QWidget *parent)
 	setFixedSize(320, 330);
 	ui.btn_police->setVisible(false);
 	// show gif
-	QMovie *movie = new QMovie("moyu.gif");
+	QMovie *movie = new QMovie("icon/moyu.gif");
 	ui.label->setMovie(movie);
 	movie->start();
 	ui.label_state->setVisible(false);

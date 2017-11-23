@@ -6,7 +6,7 @@ whatisit::whatisit(QDialog *parent)
 	ui.setupUi(this);
 
 	
-	ui.label->setPixmap(QPixmap("smile.png"));
+	ui.label->setPixmap(QPixmap("icon/smile.png"));
 
 	QString msg =	"Name   : MoYu Client\n"
 					"Version: 1.0(Build: 2017-11-17 09:00:00)\n"
